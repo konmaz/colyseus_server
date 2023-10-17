@@ -1,12 +1,17 @@
 import {Room, Client, Delayed} from "@colyseus/core";
 import {MyRoomState, Player} from "./schema/MyRoomState";
 import {ArraySchema, MapSchema, Schema, type} from "@colyseus/schema";
+import {convertApiResponse} from "../question_proccesor";
+import {fetchOneQuestionFromCategory, fetchToken} from "../questionsAPI";
 
 const LETTERS = "1234567890";
 
 export class MyRoom extends Room<MyRoomState> {
     maxClients = 16;
     LOBBY_CHANNEL = "$mylobby"
+    private  TIMER_SECONDS = 21;
+
+    private token:string; // token used for API requests from Trivia API
 
     // Generate a single 4 capital letter room ID.
     generateRoomIdSingle(): string {
@@ -61,7 +66,6 @@ export class MyRoom extends Room<MyRoomState> {
         }
     }
 
-
     async onCreate(options: any) {
 
         this.roomId = await this.generateRoomId();
@@ -69,12 +73,18 @@ export class MyRoom extends Room<MyRoomState> {
         let delayedInterval: Delayed;
         let answerPromiseResolve: (value: void | PromiseLike<void>) => void; // Initialize the resolve function for each round
 
+
+
+        this.onMessage("change_trivia_category", (client, message) =>{
+            this.state.trivia_category = message.category;
+        })
+
         this.onMessage("answer_question", async (client, message) => {
             if (delayedInterval != null && delayedInterval.active) {
                 let player = this.state.players.get(client.sessionId);
                 if (player.player_answer == null) {
-                    player.player_answer = "answer";
-                    player.player_answer_time = (20.0 - Math.floor(this.clock.elapsedTime / 1000));
+                    player.player_answer = message.answer;
+                    player.player_answer_time = (this.TIMER_SECONDS - Math.floor(this.clock.elapsedTime / 1000));
                 } else {
                     console.log("Double answer!! from player " + client.sessionId);
                 }
@@ -84,73 +94,71 @@ export class MyRoom extends Room<MyRoomState> {
                 }
             }
         });
-        // let answerPromise = new Promise<void>((resolve) => {
-        //     this.onMessage("answer_question", async (client, message) => {
-        //         if (delayedInterval != null && delayedInterval.active) {
-        //             let player = this.state.players.get(client.sessionId);
-        //             if (player.player_answer == null) {
-        //                 player.player_answer = "answer"
-        //                 player.player_answer_time = (20.0 - Math.floor(this.clock.elapsedTime / 1000));
-        //             } else
-        //                 console.log("Double answer!! from player " + client.sessionId)
-        //
-        //             if (this.all_players_answered()) {
-        //                 resolve();
-        //             }
-        //         }
-        //
-        //     })
-        // });
 
 
 
         this.onMessage("start_game", async (client, message) => {
+            this.broadcast("players_get_ready");
             if (!this.state.gameHasStarted) {
+                this.token = await fetchToken();
+                await this.lock();
                 this.state.gameHasStarted = true;
 
-                for (let i = 0; i < 20; i++) {
-                    this.clock.clear();
-                    this.state.timer = this.clock.elapsedTime / 1000;
-
+                while (!this.state.gameOver){
                     this.state.correctAnswer = "";
-                    this.state.question = "How much is 1+1?"
-                    this.state.answers = new ArraySchema<string>("1", "2", "3", "4");
+
+                    const API_response =  await fetchOneQuestionFromCategory(this.token, this.state.trivia_category);
+                    const { question, answers, correctAnswer, category } = convertApiResponse(API_response);
+                    this.state.question = question;
+                    this.state.answers = new ArraySchema<string>(...answers);
+                    this.state.questionCategory = category;
+
+                    this.clock.clear();
 
                     this.clock.start();
                     const clockPromise = new Promise<void>((resolve) => {
                         delayedInterval = this.clock.setInterval(() => {
-                            this.state.timer = this.clock.elapsedTime / 1000;
-                        }, 100)
+                            this.state.timer = Math.abs(Math.trunc(this.TIMER_SECONDS - this.clock.elapsedTime / 1000));
+                        }, 250)
 
                         this.clock.setTimeout(() => {
                             if (delayedInterval.active) {
                                 resolve();
                             }
-                        }, 1000 * 10);
+                        }, 1000 * this.TIMER_SECONDS);
                     });
                     const answerPromise = new Promise<void>((resolve) => {
                         answerPromiseResolve = resolve; // Assign the resolve function
                     });
 
 
-
                     await Promise.race([clockPromise, answerPromise]); // blocking to fix the Infinite loop
                     this.state.round+=1;
 
                     delayedInterval.clear()
-                    this.state.correctAnswer = "Revealed!"
+                    const timerPromise1 = new Promise<void>((resolve)=>{
+                        this.clock.setTimeout(() => {
+                            resolve();
+                        },2500);
+                    });
+
+                    await timerPromise1; // small 1.5 seconds delay after showing the correct response
+                    this.state.correctAnswer = correctAnswer;
                     this.calculate_scores();
 
 
 
-                    this.broadcast("hello");
-                    const timerPromise = new Promise<void>((resolve)=>{
+
+                    const timerPromise2 = new Promise<void>((resolve)=>{
                         this.clock.setTimeout(() => {
                             resolve();
-                        },3200);
+                        },3000);
                     });
 
-                    await timerPromise; // small 1.5 seconds delay after showing the correct response
+                    await timerPromise2; // small 1.5 seconds delay after showing the correct response
+
+                    this.state.gameOver = !this.at_least_one_alive();
+
                 }
             }
         });

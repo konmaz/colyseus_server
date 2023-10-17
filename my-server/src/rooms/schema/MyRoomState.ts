@@ -23,6 +23,7 @@ export class MyRoomState extends Schema {
   @type("boolean") gameHasStarted: boolean = false;
   @type("boolean") gameOver: boolean = false;
 
+  @type("string") questionCategory: string = "";
 
   @type("string") question: string = "";
   @type([ "string" ]) answers = new ArraySchema<string>();
@@ -34,6 +35,8 @@ export class MyRoomState extends Schema {
 
   @type("number") round: number = 0;
   @type("number") timer: number;
+
+  @type("number") trivia_category: number = 9;
 
 
 
