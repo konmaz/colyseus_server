@@ -1,4 +1,4 @@
-import { Schema, Context, type, ArraySchema, MapSchema } from "@colyseus/schema";
+import { Schema, type, ArraySchema, MapSchema } from "@colyseus/schema";
 
 export class Player extends Schema {
   @type("string") username: string;
@@ -8,7 +8,7 @@ export class Player extends Schema {
   @type("string") player_answer: string;
   @type("number") player_answer_time: number;
 
-  @type("number") streak_correct: number;
+  @type("number") streak_correct: number = 0;
 
 
 
