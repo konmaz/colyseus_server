@@ -16,7 +16,7 @@ export class MyRoom extends Room<MyRoomState> {
     // Generate a single 4 capital letter room ID.
     generateRoomIdSingle(): string {
         let result = '';
-        for (var i = 0; i < 3; i++) {
+        for (let i = 0; i < 3; i++) {
             result += LETTERS.charAt(Math.floor(Math.random() * LETTERS.length));
         }
         return result;
@@ -45,8 +45,10 @@ export class MyRoom extends Room<MyRoomState> {
         return false;
     }
 
-    all_players_answered() {
+    all__alive_players_answered() {
         for (const [key, value] of this.state.players) {
+            if (value.lives <= 0) // skip dead players
+                continue;
             if (value.player_answer == null) {
                 return false
             }
@@ -55,13 +57,15 @@ export class MyRoom extends Room<MyRoomState> {
     }
 
     calculate_scores() {
-        for (const [key, value] of this.state.players) {
-            if (this.state.correctAnswer == value.player_answer) {
-                value.score = value.player_answer_time * 5;
-                if (value.streak_correct > 3)
-                    value.lives += 1;
-            } else {
-                value.lives -= 1;
+        for (const [playerID, player] of this.state.players) {
+            if (this.state.correctAnswer == player.player_answer) {
+                player.streak_correct += 1
+                player.score = player.player_answer_time * 5;
+                if (player.streak_correct > 3)
+                    player.lives += 1;
+            } else { // player has answered incorrectly
+                player.lives -= 1;
+                player.streak_correct = 0;
             }
         }
     }
@@ -82,14 +86,14 @@ export class MyRoom extends Room<MyRoomState> {
         this.onMessage("answer_question", async (client, message) => {
             if (delayedInterval != null && delayedInterval.active) {
                 let player = this.state.players.get(client.sessionId);
-                if (player.player_answer == null) {
+                if (player.player_answer == null && player.lives > 0) {
                     player.player_answer = message.answer;
                     player.player_answer_time = (this.TIMER_SECONDS - Math.floor(this.clock.elapsedTime / 1000));
                 } else {
                     console.log("Double answer!! from player " + client.sessionId);
                 }
 
-                if (this.all_players_answered()) {
+                if (this.all__alive_players_answered()) {
                     answerPromiseResolve(); // Resolve the promise for this specific round
                 }
             }
@@ -106,6 +110,11 @@ export class MyRoom extends Room<MyRoomState> {
 
                 while (!this.state.gameOver){
                     this.state.correctAnswer = "";
+                    for (const [playerID, player] of this.state.players) {
+                        player.player_answer = null;
+                        player.player_answer_time = 0;
+                    }
+
 
                     const API_response =  await fetchOneQuestionFromCategory(this.token, this.state.trivia_category);
                     const { question, answers, correctAnswer, category } = convertApiResponse(API_response);
