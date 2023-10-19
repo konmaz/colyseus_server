@@ -1,6 +1,8 @@
 import { Schema, type, ArraySchema, MapSchema } from "@colyseus/schema";
 
 export class Player extends Schema {
+  @type("string") sessionId : string;
+
   @type("string") username: string;
   @type("number") lives: number = 3;
   @type("number") score: number = 0;
@@ -9,13 +11,6 @@ export class Player extends Schema {
   @type("number") player_answer_time: number;
 
   @type("number") streak_correct: number = 0;
-
-
-
-  public reset_player_answers(){
-    this.player_answer_time = null;
-    this.player_answer = null;
-  }
 }
 
 
@@ -27,8 +22,8 @@ export class MyRoomState extends Schema {
 
   @type("string") question: string = "";
   @type([ "string" ]) answers = new ArraySchema<string>();
-  @type("string") correctAnswer: string = "";
 
+  @type("string") correctAnswer: string = "";
 
   @type({ map: Player }) players = new MapSchema<Player>();
 

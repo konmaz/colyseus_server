@@ -9,9 +9,9 @@ const LETTERS = "1234567890";
 export class MyRoom extends Room<MyRoomState> {
     maxClients = 16;
     LOBBY_CHANNEL = "$mylobby"
-    private  TIMER_SECONDS = 21;
+    private TIMER_SECONDS = 21;
 
-    private token:string; // token used for API requests from Trivia API
+    private token: string; // token used for API requests from Trivia API
 
     // Generate a single 4 capital letter room ID.
     generateRoomIdSingle(): string {
@@ -58,16 +58,21 @@ export class MyRoom extends Room<MyRoomState> {
 
     calculate_scores() {
         for (const [playerID, player] of this.state.players) {
-            if (this.state.correctAnswer == player.player_answer) {
+            if (player.lives==0)
+                continue;
+            if (this.state.correctAnswer == player.player_answer) { // if player has answered correctly
                 player.streak_correct += 1
                 player.score += player.player_answer_time * 5;
-                if (player.streak_correct > 3)
+                if (player.streak_correct > 3) {
                     player.lives += 1;
+                    player.streak_correct = 0;
+                }
             } else { // player has answered incorrectly
                 player.lives -= 1;
                 player.streak_correct = 0;
             }
         }
+        this.broadcast("updated_scores");
     }
 
     async onCreate(options: any) {
@@ -78,8 +83,7 @@ export class MyRoom extends Room<MyRoomState> {
         let answerPromiseResolve: (value: void | PromiseLike<void>) => void; // Initialize the resolve function for each round
 
 
-
-        this.onMessage("change_trivia_category", (client, message) =>{
+        this.onMessage("change_trivia_category", (client, message) => {
             this.state.trivia_category = message.category;
         })
 
@@ -100,7 +104,6 @@ export class MyRoom extends Room<MyRoomState> {
         });
 
 
-
         this.onMessage("start_game", async (client, message) => {
             this.broadcast("players_get_ready");
             if (!this.state.gameHasStarted) {
@@ -108,19 +111,20 @@ export class MyRoom extends Room<MyRoomState> {
                 await this.lock();
                 this.state.gameHasStarted = true;
 
-                while (!this.state.gameOver){
+                while (!this.state.gameOver) {
                     this.state.correctAnswer = "";
                     for (const [playerID, player] of this.state.players) {
                         player.player_answer = null;
                         player.player_answer_time = 0;
                     }
+                    this.broadcast("updated_scores");
 
-
-                    const API_response =  await fetchOneQuestionFromCategory(this.token, this.state.trivia_category);
-                    const { question, answers, correctAnswer, category } = convertApiResponse(API_response);
+                    const API_response = await fetchOneQuestionFromCategory(this.token, this.state.trivia_category);
+                    const {question, answers, correctAnswer, category} = convertApiResponse(API_response);
                     this.state.question = question;
                     this.state.answers = new ArraySchema<string>(...answers);
                     this.state.questionCategory = category;
+                    this.state.correctAnswer = "";
 
                     this.clock.clear();
 
@@ -142,13 +146,13 @@ export class MyRoom extends Room<MyRoomState> {
 
 
                     await Promise.race([clockPromise, answerPromise]); // blocking to fix the Infinite loop
-                    this.state.round+=1;
+                    this.state.round += 1;
 
                     delayedInterval.clear()
-                    const timerPromise1 = new Promise<void>((resolve)=>{
+                    const timerPromise1 = new Promise<void>((resolve) => {
                         this.clock.setTimeout(() => {
                             resolve();
-                        },2500);
+                        }, 2500);
                     });
 
                     await timerPromise1; // small 1.5 seconds delay after showing the correct response
@@ -156,18 +160,15 @@ export class MyRoom extends Room<MyRoomState> {
                     this.calculate_scores();
 
 
-
-
-                    const timerPromise2 = new Promise<void>((resolve)=>{
+                    const timerPromise2 = new Promise<void>((resolve) => {
                         this.clock.setTimeout(() => {
                             resolve();
-                        },3000);
+                        }, 3000);
                     });
 
                     await timerPromise2; // small 1.5 seconds delay after showing the correct response
 
                     this.state.gameOver = !this.at_least_one_alive();
-
                 }
             }
         });
@@ -178,6 +179,7 @@ export class MyRoom extends Room<MyRoomState> {
         let player = new Player();
         try {
             player.username = options.username;
+            player.sessionId = client.sessionId;
         } catch (error) {
             console.error(error);
         }
@@ -186,9 +188,22 @@ export class MyRoom extends Room<MyRoomState> {
 
     }
 
-    onLeave(client: Client, consented: boolean) {
-        console.log(client.sessionId, "left!");
-        this.state.players.delete(client.sessionId);
+    async onLeave(client: Client, consented: boolean) {
+
+        try {
+            // if (consented) {
+            //     throw new Error("consented leave");
+            // }
+            console.log(client.sessionId, "onLeave");
+            // allow disconnected client to reconnect into this room until 30 seconds
+            await this.allowReconnection(client, 30);
+
+        } catch (e) {
+            console.log(client.sessionId, "leaved for ever");
+            // 20 seconds expired. let's remove the client.
+            this.state.players.delete(client.sessionId);
+        }
+        //this.state.players.delete(client.sessionId);
     }
 
     async onDispose() {
