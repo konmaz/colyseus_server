@@ -60,7 +60,7 @@ export class MyRoom extends Room<MyRoomState> {
         for (const [playerID, player] of this.state.players) {
             if (this.state.correctAnswer == player.player_answer) {
                 player.streak_correct += 1
-                player.score = player.player_answer_time * 5;
+                player.score += player.player_answer_time * 5;
                 if (player.streak_correct > 3)
                     player.lives += 1;
             } else { // player has answered incorrectly
