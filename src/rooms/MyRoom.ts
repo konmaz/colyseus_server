@@ -1,6 +1,6 @@
 import {Room, Client, Delayed} from "@colyseus/core";
 import {MyRoomState, Player} from "./schema/MyRoomState";
-import {ArraySchema, MapSchema, Schema, type} from "@colyseus/schema";
+import {ArraySchema} from "@colyseus/schema";
 import {QuestionsAPI} from "../questionsAPI";
 
 const LETTERS = "1234567890";
@@ -9,8 +9,7 @@ export class MyRoom extends Room<MyRoomState> {
     maxClients = 16;
     LOBBY_CHANNEL = "$mylobby"
     private TIMER_SECONDS = 21;
-
-    private token: string; // token used for API requests from Trivia API
+// token used for API requests from Trivia API
 
     // Generate a single 4 capital letter room ID.
     generateRoomIdSingle(): string {
@@ -36,7 +35,7 @@ export class MyRoom extends Room<MyRoomState> {
     }
 
     at_least_one_alive() {
-        for (const [key, value] of this.state.players) {
+        for (const [, value] of this.state.players) {
             if (value.lives > 0) {
                 return true;
             }
@@ -45,7 +44,7 @@ export class MyRoom extends Room<MyRoomState> {
     }
 
     all__alive_players_answered() {
-        for (const [key, value] of this.state.players) {
+        for (const [, value] of this.state.players) {
             if (value.lives <= 0) // skip dead players
                 continue;
             if (value.getPlayerAnswer() == null) {
@@ -56,7 +55,7 @@ export class MyRoom extends Room<MyRoomState> {
     }
 
     calculate_scores() {
-        for (const [playerID, player] of this.state.players) {
+        for (const [, player] of this.state.players) {
             if (player.lives==0)
                 continue;
             if (this.state.correctAnswer == player.getPlayerAnswer()) { // if player has answered correctly
@@ -105,7 +104,7 @@ export class MyRoom extends Room<MyRoomState> {
         });
 
 
-        this.onMessage("start_game", async (client, message) => {
+        this.onMessage("start_game", async () => {
             this.broadcast("players_get_ready");
             if (!this.state.gameHasStarted) {
                 await this.lock(); // lock the room so new players can't join
@@ -114,7 +113,7 @@ export class MyRoom extends Room<MyRoomState> {
 
                 while (!this.state.gameOver) {
                     this.state.correctAnswer = "";
-                    for (const [playerID, player] of this.state.players) {
+                    for (const [, player] of this.state.players) {
                         player.setPlayerAnswer(null);
                         player.setPlayerAnswerTime(0);
                     }
