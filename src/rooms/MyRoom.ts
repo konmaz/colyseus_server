@@ -1,8 +1,7 @@
 import {Room, Client, Delayed} from "@colyseus/core";
 import {MyRoomState, Player} from "./schema/MyRoomState";
 import {ArraySchema, MapSchema, Schema, type} from "@colyseus/schema";
-import {convertApiResponse} from "../question_proccesor";
-import {fetchOneQuestionFromCategory, fetchToken} from "../questionsAPI";
+import {QuestionsAPI} from "../questionsAPI";
 
 const LETTERS = "1234567890";
 
@@ -49,7 +48,7 @@ export class MyRoom extends Room<MyRoomState> {
         for (const [key, value] of this.state.players) {
             if (value.lives <= 0) // skip dead players
                 continue;
-            if (value.player_answer == null) {
+            if (value.getPlayerAnswer() == null) {
                 return false
             }
         }
@@ -60,9 +59,9 @@ export class MyRoom extends Room<MyRoomState> {
         for (const [playerID, player] of this.state.players) {
             if (player.lives==0)
                 continue;
-            if (this.state.correctAnswer == player.player_answer) { // if player has answered correctly
+            if (this.state.correctAnswer == player.getPlayerAnswer()) { // if player has answered correctly
                 player.streak_correct += 1
-                player.score += player.player_answer_time * 5;
+                player.score += player.getPlayerAnswerTime() * 5;
                 if (player.streak_correct > 3) {
                     player.lives += 1;
                     player.streak_correct = 0;
@@ -77,6 +76,8 @@ export class MyRoom extends Room<MyRoomState> {
 
     async onCreate(options: any) {
 
+        const quiz = new QuestionsAPI();
+
         this.roomId = await this.generateRoomId();
         this.setState(new MyRoomState());
         let delayedInterval: Delayed;
@@ -90,9 +91,9 @@ export class MyRoom extends Room<MyRoomState> {
         this.onMessage("answer_question", async (client, message) => {
             if (delayedInterval != null && delayedInterval.active) {
                 let player = this.state.players.get(client.sessionId);
-                if (player.player_answer == null && player.lives > 0) {
-                    player.player_answer = message.answer;
-                    player.player_answer_time = (this.TIMER_SECONDS - Math.floor(this.clock.elapsedTime / 1000));
+                if (player.getPlayerAnswer() == null && player.lives > 0) {
+                    player.setPlayerAnswer(message.answer);
+                    player.setPlayerAnswerTime(this.TIMER_SECONDS - Math.floor(this.clock.elapsedTime / 1000))
                 } else {
                     console.log("Double answer!! from player " + client.sessionId);
                 }
@@ -107,22 +108,22 @@ export class MyRoom extends Room<MyRoomState> {
         this.onMessage("start_game", async (client, message) => {
             this.broadcast("players_get_ready");
             if (!this.state.gameHasStarted) {
-                this.token = await fetchToken();
-                await this.lock();
+                await this.lock(); // lock the room so new players can't join
+
                 this.state.gameHasStarted = true;
 
                 while (!this.state.gameOver) {
                     this.state.correctAnswer = "";
                     for (const [playerID, player] of this.state.players) {
-                        player.player_answer = null;
-                        player.player_answer_time = 0;
+                        player.setPlayerAnswer(null);
+                        player.setPlayerAnswerTime(0);
                     }
                     this.broadcast("updated_scores");
 
-                    const API_response = await fetchOneQuestionFromCategory(this.token, this.state.trivia_category);
-                    const {question, answers, correctAnswer, category} = convertApiResponse(API_response);
+                    const {question, incorrect_answers, correct_answer, category} = quiz.getRandomQuestion();
                     this.state.question = question;
-                    this.state.answers = new ArraySchema<string>(...answers);
+                    const allAnswers = [correct_answer, ...incorrect_answers]
+                    this.state.answers = new ArraySchema<string>(...allAnswers);
                     this.state.questionCategory = category;
                     this.state.correctAnswer = "";
 
@@ -156,7 +157,7 @@ export class MyRoom extends Room<MyRoomState> {
                     });
 
                     await timerPromise1; // small 1.5 seconds delay after showing the correct response
-                    this.state.correctAnswer = correctAnswer;
+                    this.state.correctAnswer = correct_answer;
                     this.calculate_scores();
 
 
@@ -170,6 +171,7 @@ export class MyRoom extends Room<MyRoomState> {
 
                     this.state.gameOver = !this.at_least_one_alive();
                 }
+                this.broadcast("updated_scores");
             }
         });
     }

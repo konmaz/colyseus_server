@@ -7,10 +7,28 @@ export class Player extends Schema {
   @type("number") lives: number = 3;
   @type("number") score: number = 0;
 
-  @type("string") player_answer: string;
-  @type("number") player_answer_time: number;
+  private player_answer: string;
+  private player_answer_time: number;
 
   @type("number") streak_correct: number = 0;
+
+  getPlayerAnswer(): string {
+    return this.player_answer;
+  }
+
+  setPlayerAnswer(answer: string): void {
+    // Implement any logic you need here
+    this.player_answer = answer;
+  }
+
+  getPlayerAnswerTime(): number {
+    return this.player_answer_time;
+  }
+
+  setPlayerAnswerTime(time: number): void {
+    // Implement any logic you need here
+    this.player_answer_time = time;
+  }
 }
 
 
